@@ -80,7 +80,43 @@ class MLPipeline:
         return self
     
     def engineer_features(self):
-
+        """Step 2: Apply feature engineering and transformations"""
+        print("\n" + "="*70)
+        print(" STEP 2: FEATURE ENGINEERING")
+        print("="*70)
+        
+        self.feature_engineer = FeatureEngineer()
+        
+        # Create preprocessing pipeline
+        print("Creating feature transformation pipeline...")
+        self.feature_engineer.create_preprocessing_pipeline(self.X_train)
+        
+        # Fit and transform training data
+        print("Transforming training data...")
+        X_train_transformed = self.feature_engineer.fit_transform(self.X_train)
+        
+        # Transform test data
+        print("Transforming test data...")
+        X_test_transformed = self.feature_engineer.transform(self.X_test)
+        
+        # Convert to DataFrame for easier handling
+        feature_names = self.feature_engineer.get_feature_names()
+        self.X_train_transformed = pd.DataFrame(
+            X_train_transformed,
+            columns=feature_names,
+            index=self.X_train.index
+        )
+        self.X_test_transformed = pd.DataFrame(
+            X_test_transformed,
+            columns=feature_names,
+            index=self.X_test.index
+        )
+        
+        print(f"\n✓ Features after transformation: {len(feature_names)}")
+        print(f"✓ Training shape: {self.X_train_transformed.shape}")
+        print(f"✓ Test shape: {self.X_test_transformed.shape}")
+        
+        return self
     
     def train_model(self, model_type: str = 'rf', **model_params):
         """Step 3: Train machine learning model"""
