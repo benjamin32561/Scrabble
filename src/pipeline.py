@@ -51,6 +51,33 @@ class MLPipeline:
         self.test_game_ids = None
         
     def load_and_preprocess(self):
+        """Step 1: Load and preprocess data"""
+        print("\n" + "="*70)
+        print(" STEP 1: LOADING AND PREPROCESSING DATA")
+        print("="*70)
+        
+        self.preprocessor = DataPreprocessor(
+            use_turns=self.use_turns,
+            sample_turns=self.sample_turns
+        )
+        
+        # Load data
+        self.preprocessor.load_data()
+        
+        # Process training data
+        self.X_train, self.y_train = self.preprocessor.process_train_data()
+        
+        # Process test data
+        self.X_test = self.preprocessor.process_test_data()
+        
+        # Save game IDs for submission
+        self.test_game_ids = self.X_test['game_id'].copy()
+        
+        print(f"\n✓ Training samples: {len(self.X_train)}")
+        print(f"✓ Test samples: {len(self.X_test)}")
+        print(f"✓ Number of features: {self.X_train.shape[1]}")
+        
+        return self
     
     def engineer_features(self):
 
