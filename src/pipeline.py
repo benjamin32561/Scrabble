@@ -120,7 +120,93 @@ class MLPipeline:
     
     def train_model(self, model_type: str = 'rf', **model_params):
         """Step 3: Train machine learning model"""
-
+        print("\n" + "="*70)
+        print(f" STEP 3: TRAINING MODEL ({model_type.upper()})")
+        print("="*70)
+        
+        self.model_pipeline = ModelPipeline()
+        
+        # Train model (already preprocessed, so set fit=False for prepare_features)
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        # Split for validation
+        X_train, X_val, y_train, y_val = train_test_split(
+            self.X_train_transformed, self.y_train,
+            test_size=0.2, random_state=RANDOM_STATE
+        )
+        
+        # Initialize model
+        if model_type == 'rf':
+            from sklearn.ensemble import RandomForestRegressor
+            self.model_pipeline.model = RandomForestRegressor(
+                n_estimators=model_params.get('n_estimators', 100),
+                max_depth=model_params.get('max_depth', 15),
+                min_samples_split=model_params.get('min_samples_split', 5),
+                random_state=RANDOM_STATE,
+                n_jobs=-1,
+                verbose=1
+            )
+        elif model_type == 'gbr':
+            from sklearn.ensemble import GradientBoostingRegressor
+            self.model_pipeline.model = GradientBoostingRegressor(
+                n_estimators=model_params.get('n_estimators', 100),
+                max_depth=model_params.get('max_depth', 5),
+                learning_rate=model_params.get('learning_rate', 0.1),
+                random_state=RANDOM_STATE,
+                verbose=1
+            )
+        elif model_type == 'lr':
+            from sklearn.linear_model import LinearRegression
+            self.model_pipeline.model = LinearRegression()
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+        
+        # Train
+        print("Training model...")
+        self.model_pipeline.model.fit(X_train, y_train)
+        
+        # Evaluate
+        print("\nEvaluating model...")
+        y_pred_train = self.model_pipeline.model.predict(X_train)
+        y_pred_val = self.model_pipeline.model.predict(X_val)
+        
+        train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
+        train_mae = mean_absolute_error(y_train, y_pred_train)
+        train_r2 = r2_score(y_train, y_pred_train)
+        
+        val_rmse = np.sqrt(mean_squared_error(y_val, y_pred_val))
+        val_mae = mean_absolute_error(y_val, y_pred_val)
+        val_r2 = r2_score(y_val, y_pred_val)
+        
+        print("\n" + "-"*70)
+        print(" TRAINING METRICS")
+        print("-"*70)
+        print(f"  RMSE: {train_rmse:.2f}")
+        print(f"  MAE:  {train_mae:.2f}")
+        print(f"  R²:   {train_r2:.4f}")
+        
+        print("\n" + "-"*70)
+        print(" VALIDATION METRICS")
+        print("-"*70)
+        print(f"  RMSE: {val_rmse:.2f}")
+        print(f"  MAE:  {val_mae:.2f}")
+        print(f"  R²:   {val_r2:.4f}")
+        
+        # Feature importance (if available)
+        if hasattr(self.model_pipeline.model, 'feature_importances_'):
+            print("\n" + "-"*70)
+            print(" TOP 10 FEATURE IMPORTANCES")
+            print("-"*70)
+            importances = pd.DataFrame({
+                'feature': self.X_train_transformed.columns,
+                'importance': self.model_pipeline.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+            
+            for i, row in importances.head(10).iterrows():
+                print(f"  {row['feature']:30s}: {row['importance']:.4f}")
+        
+        return self
     
     def generate_predictions(self):
         """Step 4: Generate predictions for test set"""
