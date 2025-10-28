@@ -1,9 +1,17 @@
 """Data loading and preprocessing utilities"""
 
+# Standard library imports
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from typing import Tuple, Optional
+
+# Third-party imports
 import pandas as pd
 import numpy as np
-from typing import Tuple, Optional
-from pathlib import Path
 
 from src.config import DATA_DIR, TRAIN_FILE, TEST_FILE, GAMES_FILE, TURNS_FILE
 
