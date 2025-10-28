@@ -269,8 +269,56 @@ class MLPipeline:
     
     def run_full_pipeline(self, model_type: str = 'rf', save_model: bool = True, **model_params):
         """Run the complete pipeline from data loading to submission"""
+        print("\n" + "="*70)
+        print(" SCRABBLE PLAYER RATING PREDICTION - FULL PIPELINE")
+        print("="*70)
+        
+        # Step 1: Load and preprocess
+        self.load_and_preprocess()
+        
+        # Step 2: Feature engineering
+        self.engineer_features()
+        
+        # Step 3: Train model
+        self.train_model(model_type=model_type, **model_params)
+        
+        # Step 4: Generate predictions
+        predictions = self.generate_predictions()
+        
+        # Step 5: Save submission
+        submission_path = self.save_submission(predictions)
+        
+        # Optionally save model
+        if save_model:
+            model_path = self.save_model()
+        
+        print("\n" + "="*70)
+        print(" PIPELINE COMPLETE!")
+        print("="*70)
+        print(f"\n✓ Submission file: {submission_path}")
+        if save_model:
+            print(f"✓ Model file: {model_path}")
+        
+        return submission_path
 
 
+def main():
+    """Run the pipeline with default settings"""
+    # Create pipeline (without turns for faster processing)
+    pipeline = MLPipeline(use_turns=False, sample_turns=None)
+    
+    # Run full pipeline with Random Forest
+    submission_path = pipeline.run_full_pipeline(
+        model_type='rf',
+        n_estimators=100,
+        max_depth=15,
+        min_samples_split=5,
+        save_model=True
+    )
+    
+    return pipeline
 
 
+if __name__ == "__main__":
+    pipeline = main()
 
