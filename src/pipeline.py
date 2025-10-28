@@ -226,11 +226,46 @@ class MLPipeline:
     
     def save_submission(self, predictions: np.ndarray, filename: str = None):
         """Step 5: Save predictions to submission file"""
- 
+        print("\n" + "="*70)
+        print(" STEP 5: SAVING SUBMISSION")
+        print("="*70)
+        
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"submission_{timestamp}.csv"
+        
+        submission = pd.DataFrame({
+            'game_id': self.test_game_ids,
+            'rating': predictions
+        })
+        
+        output_path = OUTPUT_DIR / filename
+        submission.to_csv(output_path, index=False)
+        
+        print(f"\n✓ Submission saved to: {output_path}")
+        print(f"✓ Number of predictions: {len(submission)}")
+        
+        return output_path
     
     def save_model(self, filename: str = None):
         """Save trained model and preprocessing pipeline"""
-
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"model_{timestamp}.joblib"
+        
+        model_path = OUTPUT_DIR / filename
+        
+        # Save model, feature engineer, and other necessary components
+        model_package = {
+            'model': self.model_pipeline.model,
+            'feature_engineer': self.feature_engineer,
+            'feature_names': self.X_train_transformed.columns.tolist()
+        }
+        
+        joblib.dump(model_package, model_path)
+        print(f"\n✓ Model saved to: {model_path}")
+        
+        return model_path
     
     def run_full_pipeline(self, model_type: str = 'rf', save_model: bool = True, **model_params):
         """Run the complete pipeline from data loading to submission"""
