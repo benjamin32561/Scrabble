@@ -1,15 +1,23 @@
-"""Feature engineering utilities"""
+# Standard library imports
+from typing import Dict, List, Tuple
 
+# Third-party imports
 import pandas as pd
 import numpy as np
-from typing import Dict, List
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 
 
 class FeatureEngineer:
     """Class for creating and engineering features"""
     
     def __init__(self):
-        pass
+        self.preprocessor = None
+        self.feature_names = None
+        self.numeric_features = None
+        self.categorical_features = None
     
     def aggregate_game_features(self, games_df: pd.DataFrame) -> pd.DataFrame:
         """Create features from games.csv"""
@@ -97,3 +105,130 @@ class FeatureEngineer:
         """Select specific features from dataframe"""
         available_features = [f for f in feature_list if f in df.columns]
         return df[available_features]
+    
+    def create_preprocessing_pipeline(self, X: pd.DataFrame, 
+                                     numeric_features: List[str] = None,
+                                     categorical_features: List[str] = None) -> ColumnTransformer:
+        """
+        Create sklearn preprocessing pipeline
+        
+        Args:
+            X: Feature dataframe
+            numeric_features: List of numeric feature names (auto-detected if None)
+            categorical_features: List of categorical feature names (auto-detected if None)
+            
+        Returns:
+            ColumnTransformer pipeline
+        """
+        # Auto-detect if not provided
+        if numeric_features is None:
+            numeric_features = X.select_dtypes(include=[np.number]).columns.tolist()
+            # Exclude game_id if present
+            numeric_features = [f for f in numeric_features if f != 'game_id']
+        
+        if categorical_features is None:
+            categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        self.numeric_features = numeric_features
+        self.categorical_features = categorical_features
+        
+        # Create transformers
+        numeric_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')),
+            ('scaler', StandardScaler())
+        ])
+        
+        categorical_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+            ('onehot', OneHotEncoder(drop='first', handle_unknown='ignore', sparse_output=False))
+        ])
+        
+        # Combine transformers
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numeric_transformer, numeric_features),
+                ('cat', categorical_transformer, categorical_features)
+            ],
+            remainder='drop'  # Drop game_id and other unused columns
+        )
+        
+        self.preprocessor = preprocessor
+        
+        return preprocessor
+    
+    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
+        """Fit the preprocessor and transform data"""
+        if self.preprocessor is None:
+            self.create_preprocessing_pipeline(X)
+        
+        X_transformed = self.preprocessor.fit_transform(X)
+        
+        # Get feature names after transformation
+        self._extract_feature_names()
+        
+        return X_transformed
+    
+    def transform(self, X: pd.DataFrame) -> np.ndarray:
+        """Transform data using fitted preprocessor"""
+        return self.preprocessor.transform(X)
+    
+    def _extract_feature_names(self):
+        """Extract feature names after transformation"""
+        feature_names = []
+        
+        # Numeric features keep their names
+        feature_names.extend(self.numeric_features)
+        
+        # Get categorical feature names from OneHotEncoder
+        if self.categorical_features:
+            cat_pipeline = self.preprocessor.named_transformers_['cat']
+            onehot = cat_pipeline.named_steps['onehot']
+            cat_names = onehot.get_feature_names_out(self.categorical_features)
+            feature_names.extend(cat_names)
+        
+        self.feature_names = feature_names
+    
+    def get_feature_names(self) -> List[str]:
+        """Get names of all features after transformation"""
+        return self.feature_names if self.feature_names else []
+    
+    def handle_missing_values(self, df: pd.DataFrame, strategy: Dict[str, str] = None) -> pd.DataFrame:
+        """
+        Handle missing values with different strategies per column
+        
+        Args:
+            df: Input dataframe
+            strategy: Dictionary mapping column names to strategies
+                     ('mean', 'median', 'mode', 'drop', or a constant value)
+        
+        Returns:
+            DataFrame with missing values handled
+        """
+        df = df.copy()
+        
+        if strategy is None:
+            # Default strategies
+            strategy = {}
+            for col in df.columns:
+                if df[col].dtype in [np.float64, np.int64]:
+                    strategy[col] = 'median'
+                else:
+                    strategy[col] = 'mode'
+        
+        for col, strat in strategy.items():
+            if col not in df.columns:
+                continue
+            
+            if strat == 'mean':
+                df[col].fillna(df[col].mean(), inplace=True)
+            elif strat == 'median':
+                df[col].fillna(df[col].median(), inplace=True)
+            elif strat == 'mode':
+                df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else 'unknown', inplace=True)
+            elif strat == 'drop':
+                df = df[df[col].notna()]
+            else:
+                # Assume it's a constant value
+                df[col].fillna(strat, inplace=True)
+        
+        return df
