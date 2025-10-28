@@ -210,7 +210,19 @@ class MLPipeline:
     
     def generate_predictions(self):
         """Step 4: Generate predictions for test set"""
- 
+        print("\n" + "="*70)
+        print(" STEP 4: GENERATING PREDICTIONS")
+        print("="*70)
+        
+        predictions = self.model_pipeline.model.predict(self.X_test_transformed)
+        
+        print(f"\n✓ Generated {len(predictions)} predictions")
+        print(f"  Mean prediction: {predictions.mean():.2f}")
+        print(f"  Std prediction:  {predictions.std():.2f}")
+        print(f"  Min prediction:  {predictions.min():.2f}")
+        print(f"  Max prediction:  {predictions.max():.2f}")
+        
+        return predictions
     
     def save_submission(self, predictions: np.ndarray, filename: str = None):
         """Step 5: Save predictions to submission file"""
