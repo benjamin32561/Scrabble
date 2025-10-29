@@ -18,19 +18,12 @@ class FeatureEngineer:
         self.feature_names = None
         self.numeric_features = None
         self.categorical_features = None
+        self.bot_names = ['BetterBot', 'STEEBot', 'HastyBot', 'Super']
+        self.feature_stats = {}
     
     def aggregate_game_features(self, games_df: pd.DataFrame) -> pd.DataFrame:
         """Create features from games.csv"""
         df = games_df.copy()
-        
-        # Convert date to datetime
-        df['created_at'] = pd.to_datetime(df['created_at'])
-        
-        # Extract date features
-        df['year'] = df['created_at'].dt.year
-        df['month'] = df['created_at'].dt.month
-        df['day_of_week'] = df['created_at'].dt.dayofweek
-        df['hour'] = df['created_at'].dt.hour
         
         # Time control features
         df['has_overtime'] = (df['max_overtime_minutes'] > 0).astype(int)
@@ -41,16 +34,13 @@ class FeatureEngineer:
         return df
     
     def aggregate_turn_features(self, turns_df: pd.DataFrame) -> pd.DataFrame:
-        """Create features from turns.csv aggregated by game_id and nickname"""
-        from src.config import TURNS_AGGREGATIONS
-        
+        """Create streamlined features from turns.csv aggregated by game_id and nickname"""
         df = turns_df.copy()
         
-        # Basic aggregations
+        # Simplified aggregations
         turn_features = df.groupby(['game_id', 'nickname']).agg({
-            'points': ['mean', 'max', 'min', 'std', 'sum'],
-            'score': ['mean', 'max', 'std', 'last'],
-            'turn_number': 'max'
+            'points': ['mean', 'sum', 'count'],
+            'score': 'last'
         }).reset_index()
         
         # Flatten column names
@@ -84,10 +74,14 @@ class FeatureEngineer:
                     features = {
                         'game_id': game_id,
                         'nickname': row['nickname'],
+                        'score': row['score'],
+                        'rating': row['rating'],
+                        'opponent_nickname': opponent['nickname'],
+                        'opponent_score': opponent['score'],
+                        'opponent_rating': opponent['rating'],
                         'score_diff': row['score'] - opponent['score'],
                         'score_ratio': row['score'] / (opponent['score'] + 1),  # +1 to avoid div by zero
-                        'opponent_rating': opponent['rating'],
-                        'opponent_score': opponent['score'],
+                        'won_game': 1 if row['score'] > opponent['score'] else 0,
                         'is_bot': self._is_bot(row['nickname'])
                     }
                     
@@ -232,3 +226,315 @@ class FeatureEngineer:
                 df[col].fillna(strat, inplace=True)
         
         return df
+    
+    def create_bot_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create features based on bot interactions"""
+        print("Creating bot interaction features...")
+        
+        df = df.copy()
+        
+        # Identify bot opponents
+        df['opponent_is_bot'] = df['opponent_nickname'].isin(self.bot_names).astype(int)
+        
+        # Bot-specific opponent features
+        for bot in self.bot_names:
+            df[f'opponent_is_{bot}'] = (df['opponent_nickname'] == bot).astype(int)
+        
+        # Bot strength categories based on EDA findings
+        def get_bot_strength(nickname):
+            if nickname == 'STEEBot':
+                return 3  # Strongest
+            elif nickname == 'HastyBot':
+                return 2  # Medium
+            elif nickname == 'BetterBot':
+                return 1  # Weakest
+            elif nickname == 'Super':
+                return 2  # Medium
+            else:
+                return 0  # Human
+        
+        df['opponent_bot_strength'] = df['opponent_nickname'].apply(get_bot_strength)
+        
+        print(f"✓ Added bot interaction features")
+        return df
+    
+    def create_performance_consistency_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create features measuring performance consistency"""
+        print("Creating performance consistency features...")
+        
+        df = df.copy()
+        
+        # Score consistency relative to opponent
+        df['score_consistency'] = df['score_diff'] / (df['opponent_score'] + 1)
+        
+        # Performance categories
+        def categorize_performance(score_diff):
+            if score_diff > 50:
+                return 'dominant'
+            elif score_diff > 10:
+                return 'strong'
+            elif score_diff > -10:
+                return 'close'
+            elif score_diff > -50:
+                return 'weak'
+            else:
+                return 'poor'
+        
+        df['performance_category'] = df['score_diff'].apply(categorize_performance)
+        
+        # Binary performance indicators
+        df['is_dominant_win'] = (df['score_diff'] > 50).astype(int)
+        df['is_close_game'] = (abs(df['score_diff']) <= 10).astype(int)
+        
+        print(f"✓ Added performance consistency features")
+        return df
+    
+    # Temporal features removed - showed little to no predictive value
+    
+    def create_game_context_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create game context features"""
+        print("Creating game context features...")
+        
+        df = df.copy()
+        
+        # Time control categories based on EDA
+        def categorize_time_control(time_name):
+            if pd.isna(time_name):
+                return 'unknown'
+            time_name = str(time_name).lower()
+            if 'ultra' in time_name:
+                return 'ultra_blitz'
+            elif 'blitz' in time_name:
+                return 'blitz'
+            elif 'rapid' in time_name:
+                return 'rapid'
+            else:
+                return 'regular'
+        
+        df['time_category'] = df['time_control_name'].apply(categorize_time_control)
+        
+        # Lexicon categories
+        def categorize_lexicon(lexicon):
+            if pd.isna(lexicon):
+                return 'unknown'
+            lexicon = str(lexicon)
+            if 'CSW' in lexicon:
+                return 'csw'
+            elif 'NWL' in lexicon:
+                return 'nwl'
+            elif 'ECWL' in lexicon:
+                return 'ecwl'
+            else:
+                return 'other'
+        
+        df['lexicon_category'] = df['lexicon'].apply(categorize_lexicon)
+        
+        # Game mode features
+        df['is_rated'] = (df['rating_mode'] == 'RATED').astype(int)
+        df['has_overtime'] = (df['max_overtime_minutes'] > 1).astype(int)
+        
+        # Game duration features
+        df['game_duration_minutes'] = df['game_duration_seconds'] / 60
+        df['is_long_game'] = (df['game_duration_minutes'] > 15).astype(int)  # Based on EDA
+        df['is_short_game'] = (df['game_duration_minutes'] < 5).astype(int)
+        
+        # Time pressure features
+        df['time_pressure'] = df['initial_time_seconds'] / 60  # Convert to minutes
+        df['high_time_pressure'] = (df['time_pressure'] < 10).astype(int)  # Less than 10 minutes
+        
+        print(f"✓ Added game context features")
+        return df
+    
+    def create_turn_aggregation_features(self, df: pd.DataFrame, turns_df: pd.DataFrame) -> pd.DataFrame:
+        """Create streamlined turn-level aggregation features (keeping only most predictive)"""
+        print("Creating turn aggregation features...")
+        
+        # Get relevant games
+        relevant_games = df['game_id'].unique()
+        turns_filtered = turns_df[turns_df['game_id'].isin(relevant_games)].copy()
+        
+        # Handle missing values in turns data
+        turns_filtered['points'] = turns_filtered['points'].fillna(0)
+        turns_filtered['score'] = turns_filtered['score'].fillna(0)
+        
+        # Simplified aggregations - only keep most predictive features
+        turn_agg = turns_filtered.groupby(['game_id', 'nickname']).agg({
+            'points': ['mean', 'sum', 'count'],
+            'score': 'last'
+        }).reset_index()
+        
+        # Flatten column names
+        turn_agg.columns = ['game_id', 'nickname', 'avg_points', 'total_points', 'turn_count', 'final_score']
+        
+        # Create key efficiency metrics (top correlated features)
+        turn_agg['points_efficiency'] = turn_agg['total_points'] / (turn_agg['turn_count'] + 1)
+        turn_agg['turn_efficiency'] = turn_agg['final_score'] / (turn_agg['turn_count'] + 1)
+        
+        # Merge with main dataframe
+        df_merged = df.merge(turn_agg, on=['game_id', 'nickname'], how='left')
+        
+        print(f"✓ Added {len(turn_agg.columns)-2} turn aggregation features for {df_merged['avg_points'].notna().sum()} players")
+        return df_merged
+    
+    def create_outlier_robust_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create features robust to outliers"""
+        print("Creating outlier-robust features...")
+        
+        df = df.copy()
+        
+        # Winsorized features (cap extreme values)
+        def winsorize(series, limits=(0.01, 0.01)):
+            return series.clip(
+                lower=series.quantile(limits[0]),
+                upper=series.quantile(1-limits[1])
+            )
+        
+        # Apply winsorization to key features
+        if 'score' in df.columns:
+            df['score_winsorized'] = winsorize(df['score'])
+        if 'game_duration_seconds' in df.columns:
+            df['game_duration_winsorized'] = winsorize(df['game_duration_seconds'])
+        
+        # Log transformations for skewed features
+        if 'game_duration_seconds' in df.columns:
+            df['log_game_duration'] = np.log1p(df['game_duration_seconds'])
+        
+        # Robust scoring features
+        if 'score' in df.columns:
+            df['score_percentile'] = df['score'].rank(pct=True)
+            df['score_zscore'] = (df['score'] - df['score'].mean()) / df['score'].std()
+        
+        print(f"✓ Added outlier-robust features")
+        return df
+    
+    def create_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create interaction features between key variables"""
+        print("Creating interaction features...")
+        
+        df = df.copy()
+        
+        # Score-time interactions
+        if 'score' in df.columns and 'game_duration_minutes' in df.columns:
+            df['score_per_minute'] = df['score'] / (df['game_duration_minutes'] + 1)
+        
+        # Rating-mode interactions
+        if 'opponent_rating' in df.columns and 'is_rated' in df.columns:
+            df['rated_opponent_rating'] = df['opponent_rating'] * df['is_rated']
+        
+        # Bot-strength interactions
+        if 'opponent_bot_strength' in df.columns and 'score_diff' in df.columns:
+            df['bot_strength_score_diff'] = df['opponent_bot_strength'] * df['score_diff']
+        
+        print(f"✓ Added interaction features")
+        return df
+    
+    def engineer_all_features(self, train_df: pd.DataFrame, test_df: pd.DataFrame, 
+                             games_df: pd.DataFrame, turns_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Complete feature engineering pipeline"""
+        print("Starting comprehensive feature engineering...")
+        print("=" * 60)
+        
+        # Process training data
+        print("\nProcessing training data...")
+        train_processed = self._process_dataset(train_df, games_df, turns_df, is_test=False)
+        
+        # Process test data
+        print("\nProcessing test data...")
+        test_processed = self._process_dataset(test_df, games_df, turns_df, is_test=True)
+        
+        print("\n" + "=" * 60)
+        print("FEATURE ENGINEERING COMPLETE")
+        print("=" * 60)
+        print(f"Training features: {train_processed.shape[1]}")
+        print(f"Test features: {test_processed.shape[1]}")
+        
+        return train_processed, test_processed
+    
+    def _process_dataset(self, df: pd.DataFrame, games_df: pd.DataFrame, 
+                        turns_df: pd.DataFrame, is_test: bool = False) -> pd.DataFrame:
+        """Process a single dataset through the feature engineering pipeline"""
+        
+        # Start with basic opponent features
+        df_processed = self.compute_opponent_features(df)
+        
+        # Merge with games data
+        df_processed = df_processed.merge(games_df, on='game_id', how='left')
+        
+        # Apply all feature engineering steps
+        df_processed = self.create_bot_interaction_features(df_processed)
+        df_processed = self.create_performance_consistency_features(df_processed)
+        df_processed = self.create_game_context_features(df_processed)
+        df_processed = self.create_turn_aggregation_features(df_processed, turns_df)
+        df_processed = self.create_outlier_robust_features(df_processed)
+        df_processed = self.create_interaction_features(df_processed)
+        
+        return df_processed
+    
+    def prepare_features_for_modeling(self, train_df: pd.DataFrame, test_df: pd.DataFrame, 
+                                     target_col: str = 'rating') -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+        """Prepare features for machine learning models"""
+        print("PREPARING FEATURES FOR MODELING")
+        print("=" * 50)
+        
+        # Remove problematic features
+        features_to_remove = [
+            'game_id',  # ID column
+            'nickname',  # High cardinality
+            'opponent_nickname',  # High cardinality
+            'created_at',  # Datetime (we have derived features)
+            'first',  # High cardinality
+            'time_control_name',  # We have time_category
+            'lexicon',  # We have lexicon_category
+            'game_end_reason',  # High cardinality
+            'rating_mode'  # We have is_rated
+        ]
+        
+        # Remove features that don't exist
+        features_to_remove = [f for f in features_to_remove if f in train_df.columns]
+        
+        print(f"Removing {len(features_to_remove)} problematic features:")
+        for feature in features_to_remove:
+            print(f"  - {feature}")
+        
+        # Create clean datasets
+        train_clean = train_df.drop(columns=features_to_remove)
+        test_clean = test_df.drop(columns=[f for f in features_to_remove if f in test_df.columns])
+        
+        # Handle missing values
+        print("\nHandling missing values...")
+        
+        # For numeric features, fill with median
+        numeric_cols = train_clean.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if col != target_col:
+                median_val = train_clean[col].median()
+                train_clean[col] = train_clean[col].fillna(median_val)
+                if col in test_clean.columns:
+                    test_clean[col] = test_clean[col].fillna(median_val)
+        
+        # For categorical features, fill with mode
+        categorical_cols = train_clean.select_dtypes(include=['object', 'category']).columns
+        for col in categorical_cols:
+            mode_val = train_clean[col].mode()[0] if not train_clean[col].mode().empty else 'unknown'
+            train_clean[col] = train_clean[col].fillna(mode_val)
+            if col in test_clean.columns:
+                test_clean[col] = test_clean[col].fillna(mode_val)
+        
+        # Separate features and target
+        if target_col in train_clean.columns:
+            X_train = train_clean.drop(columns=[target_col])
+            y_train = train_clean[target_col]
+        else:
+            X_train = train_clean
+            y_train = None
+        
+        X_test = test_clean
+        
+        print(f"\nFinal feature matrix shapes:")
+        print(f"  Training: {X_train.shape}")
+        print(f"  Test: {X_test.shape}")
+        
+        if y_train is not None:
+            print(f"  Target: {y_train.shape}")
+        
+        return X_train, y_train, X_test
