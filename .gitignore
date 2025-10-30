@@ -10,6 +10,8 @@ __pycache__/
 /dataset/*.csv
 *.zip
 
+/output
+
 # Distribution / packaging
 .Python
 build/
